@@ -1,0 +1,212 @@
+import requests
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+if "user_role" not in st.session_state:
+    st.session_state.user_role = None
+
+
+# ---------------- Page Setup ----------------
+st.set_page_config(page_title="Email Intelligence Dashboard", layout="wide")
+
+# ---------------- Corporate Theme & Styling ----------------
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(120deg, #f5f9ff, #ffffff);
+}
+
+.big-title {
+    font-size: 38px;
+    font-weight: 700;
+    color: #0B5ED7;
+}
+.sub-title {
+    font-size: 17px;
+    color: #6c757d;
+    margin-bottom: 20px;
+}
+.divider {
+    height: 1px;
+    background-color: #dee2e6;
+    margin: 22px 0px;
+}
+.kpi-card {
+    background: white;
+    padding: 18px;
+    border-radius: 14px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    text-align: center;
+}
+.kpi-title {
+    color: #6c757d;
+    font-size: 14px;
+}
+.kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    color: #0B5ED7;
+}
+.section-title {
+    font-size: 19px;
+    font-weight: 600;
+    margin: 16px 0 8px 0;
+}
+
+/* Professional Table Styling */
+.custom-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+}
+.custom-table th {
+    background-color: #0B5ED7;
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+}
+.custom-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e6ecf5;
+}
+.custom-table tr:nth-child(even) {
+    background-color: #f2f7ff;
+}
+.custom-table tr:hover {
+    background-color: #e6efff;
+}
+</style>
+""", unsafe_allow_html=True)
+# ---------------- Login Screen ----------------
+if st.session_state.user_role is None:
+    st.title("🔐 Enterprise Login")
+
+    role = st.selectbox("Select your role", ["Admin", "Employee"])
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if username and password:
+            st.session_state.user_role = role
+            st.rerun()
+        else:
+            st.error("Please enter credentials")
+
+    st.stop()
+
+
+# ---------------- Header ----------------
+st.markdown('<div class="big-title">📧 AI-Powered Email Intelligence Platform</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Enterprise Decision Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+# ---------------- Live AI Test Input ----------------
+st.markdown("## 📨 Test Live Email Classification")
+
+email_input = st.text_area("Enter an email to classify", height=120)
+
+if st.button("Analyze Email"):
+    with st.spinner("Analyzing with AI..."):
+        response = requests.post(
+           "http://16.171.176.15:8000/predict",
+            json={"text": email_input}
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            st.success("Analysis Complete")
+
+            # Store results for live feed
+            if "live_results" not in st.session_state:
+                st.session_state.live_results = []
+
+            st.session_state.live_results.insert(0, result)
+        else:
+            st.error("Backend error. Check FastAPI server.")
+
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+
+# ---------------- Sample Data ----------------
+# ---------------- Live Data Source ----------------
+if "live_results" in st.session_state:
+    data = pd.DataFrame(st.session_state.live_results)
+else:
+    data = pd.DataFrame(columns=["email", "category", "urgency"])
+
+
+# ---------------- Sidebar Filters ----------------
+st.sidebar.header("Filters")
+selected_category = st.sidebar.multiselect("Category", data["category"].unique())
+selected_urgency = st.sidebar.multiselect("Urgency", data["urgency"].unique())
+
+filtered = data.copy()
+if selected_category:
+    filtered = filtered[filtered["category"].isin(selected_category)]
+if selected_urgency:
+    filtered = filtered[filtered["urgency"].isin(selected_urgency)]
+
+# ---------------- KPI Cards ----------------
+k1, k2, k3 = st.columns(3)
+
+with k1:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Total Emails</div>
+        <div class="kpi-value">{len(filtered)}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k2:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">High Urgency</div>
+        <div class="kpi-value">{(filtered["urgency"] == "high").sum()}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with k3:
+    spam_pct = round((filtered["category"] == "spam").mean() * 100, 2)
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Spam %</div>
+        <div class="kpi-value">{spam_pct}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+# ---------------- Charts ----------------
+# ---------------- Charts ----------------
+if st.session_state.user_role == "Admin":
+    left, right = st.columns(2)
+
+    with left:
+        st.markdown('<div class="section-title">Email Categories</div>', unsafe_allow_html=True)
+        fig1 = px.pie(filtered, names="category")
+        st.plotly_chart(fig1, use_container_width=True)
+
+    with right:
+        st.markdown('<div class="section-title">Urgency Levels</div>', unsafe_allow_html=True)
+        urgency_counts = filtered["urgency"].value_counts().reset_index()
+        urgency_counts.columns = ["urgency", "count"]
+        fig2 = px.bar(urgency_counts, x="urgency", y="count")
+        st.plotly_chart(fig2, use_container_width=True)
+
+
+# ---------------- Live Email Feed ----------------
+st.markdown('<div class="section-title">Live Email Feed</div>', unsafe_allow_html=True)
+
+table = filtered.reset_index(drop=True)
+table.index += 1
+
+html_table = "<table class='custom-table'><tr><th>#</th><th>Email</th><th>Category</th><th>Urgency</th></tr>"
+for idx, row in table.iterrows():
+    html_table += f"<tr><td>{idx}</td><td>{row['email']}</td><td>{row['category']}</td><td>{row['urgency']}</td></tr>"
+html_table += "</table>"
+
+st.markdown(html_table, unsafe_allow_html=True)
